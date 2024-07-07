@@ -52,6 +52,8 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_tls.h"
+#include "cJSON.h"
+#include "esp_vfs.h"
 
 #if !CONFIG_IDF_TARGET_LINUX
 #include <esp_wifi.h>
@@ -83,7 +85,61 @@
 
 static const char *TAG = "wifi softAP with Http server";
 
+#define SCRATCH_BUFSIZE (10240)
+#define FILE_PATH_MAX (ESP_VFS_PATH_MAX + 128)
+static const char *REST_TAG = "esp-rest";
+typedef struct rest_server_context
+{
+    char base_path[ESP_VFS_PATH_MAX + 1];
+    char scratch[SCRATCH_BUFSIZE];
+} rest_server_context_t;
+
 // below codes from httpServer example -----start-----
+
+//------------An http post handler-------------
+static esp_err_t ledBlink_handler(httpd_req_t *req)
+{
+    //------------------------test code start-----------------------
+    // ESP_LOGI(TAG, "LED Blinking");
+    // gpio_set_level(Led, 1);
+    // vTaskDelay(500 / portTICK_PERIOD_MS);
+    // gpio_set_level(Led, 0);
+    // vTaskDelay(500 / portTICK_PERIOD_MS);
+    // gpio_set_level(Led, 1);
+    // vTaskDelay(500 / portTICK_PERIOD_MS);
+    // gpio_set_level(Led, 0);
+    // vTaskDelay(500 / portTICK_PERIOD_MS);
+
+    int total_len = req->content_len;
+    ESP_LOGI(TAG, "content length is'%d'", total_len);
+    char buf[64]; // length of the content
+    ESP_LOGI(TAG, "size of Buffer'%d'", sizeof(buf));
+    if (total_len > sizeof(buf))
+    {
+        /* Respond with Error */
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Error: cant handle long contents.");
+        return ESP_FAIL;
+    }
+    int recv_size = MIN(total_len, sizeof(buf)); // turncate if content length larger tha buffer
+    int ret = httpd_req_recv(req, buf, recv_size);
+    if (ret <= 0) // 0 indicates connection is closed
+    {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Connection Closed");
+        return ESP_FAIL;
+    }
+
+    httpd_resp_sendstr(req, "Post control done");
+
+    ESP_LOGI(TAG, "content is '%s'", buf);
+    // cJSON *root = cJSON_Parse(buf);
+    // int red = cJSON_GetObjectItem(root, "red")->valueint;
+    // int green = cJSON_GetObjectItem(root, "green")->valueint;
+    // int blue = cJSON_GetObjectItem(root, "blue")->valueint;
+    // ESP_LOGI(REST_TAG, "Light control: red = %d, green = %d, blue = %d", red, green, blue);
+    // cJSON_Delete(root);
+    return ESP_OK;
+}
+
 /* An HTTP GET handler */
 
 static esp_err_t ledOn_handler(httpd_req_t *req)
@@ -151,6 +207,57 @@ static const httpd_uri_t ledOff = {
 				<button type=\"button\" onclick=\"window.location.href='/ledOn'\">Led On</button>\
 				</body>\
 				</html>"};
+//--------post Request------
+static const httpd_uri_t test_post_uri = {
+    .uri = "/testPost",
+    .method = HTTP_POST,
+    .handler = ledBlink_handler,
+    // .user_ctx = NULL,
+    .user_ctx = "Post Request Successful"};
+//-------post request end----
+
+static esp_err_t ajax_request_handler(httpd_req_t *req)
+{
+    const char *response = (const char *)req->user_ctx;
+    esp_err_t error = httpd_resp_send(req, response, strlen(response));
+    return error;
+}
+
+static const httpd_uri_t ajax_request_uri = {
+    .uri = "/",
+    .method = HTTP_GET,
+    .handler = ajax_request_handler,
+    /* Let's pass response string in user
+     * context to demonstrate it's usage */
+    .user_ctx = "<!DOCTYPE html>\
+				<html>\
+				\
+                <script>\
+                    function makeRequestWithFetch(){fetch('/testPost', {method : 'POST', headers: {\
+                                              'Content-Type' : 'application/json'\
+                                          },\
+                                          body : JSON.stringify({key : 'value'})\
+                                      })\
+                                          .then(response => {\
+                                              if (!response.ok)\
+                                              {\
+                                                  throw new Error('Network response was not ok ' + response.statusText);\
+                                              }\
+                                              return response.json();\
+                                          })\
+                                          .then(data => {\
+                                              console.log(data);\
+                                          })\
+                                          .catch(error => {\
+                                              console.error('There has been a problem with your fetch operation:', error);\
+                                        });\
+                                    }\
+                </script >\
+                <body>\
+                <h1>\
+                <button onclick = \"makeRequestWithFetch()\"> Make AJAX Request with Fetch</ button>\
+				</body>\
+				</html>"};
 
 esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
 {
@@ -179,6 +286,8 @@ static httpd_handle_t start_webserver(void)
         ESP_LOGI(TAG, "Registering URI handlers");
         httpd_register_uri_handler(server, &ledOff);
         httpd_register_uri_handler(server, &ledOn);
+        httpd_register_uri_handler(server, &test_post_uri);
+        httpd_register_uri_handler(server, &ajax_request_uri);
         return server;
     }
 
