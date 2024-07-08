@@ -100,15 +100,14 @@ typedef struct rest_server_context
 static esp_err_t ledBlink_handler(httpd_req_t *req)
 {
     //------------------------test code start-----------------------
-    // ESP_LOGI(TAG, "LED Blinking");
-    // gpio_set_level(Led, 1);
-    // vTaskDelay(500 / portTICK_PERIOD_MS);
-    // gpio_set_level(Led, 0);
-    // vTaskDelay(500 / portTICK_PERIOD_MS);
-    // gpio_set_level(Led, 1);
-    // vTaskDelay(500 / portTICK_PERIOD_MS);
-    // gpio_set_level(Led, 0);
-    // vTaskDelay(500 / portTICK_PERIOD_MS);
+    ESP_LOGI(TAG, "LED Blinking");
+    gpio_set_level(Led, 1);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    gpio_set_level(Led, 0);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    gpio_set_level(Led, 1);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    gpio_set_level(Led, 0);
 
     int total_len = req->content_len;
     ESP_LOGI(TAG, "content length is'%d'", total_len);
@@ -128,7 +127,15 @@ static esp_err_t ledBlink_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_sendstr(req, "Post control done");
+    // create a cJSON object
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddStringToObject(json, "name", "John Doe");
+    cJSON_AddNumberToObject(json, "age", 30);
+    cJSON_AddStringToObject(json, "email", "john.doe@example.com");
+    // convert the cJSON object to a JSON string
+    char *json_str = cJSON_Print(json);
+
+    esp_err_t error = httpd_resp_send(req, json_str, HTTPD_RESP_USE_STRLEN);
 
     ESP_LOGI(TAG, "content is '%s'", buf);
     // cJSON *root = cJSON_Parse(buf);
@@ -137,7 +144,7 @@ static esp_err_t ledBlink_handler(httpd_req_t *req)
     // int blue = cJSON_GetObjectItem(root, "blue")->valueint;
     // ESP_LOGI(REST_TAG, "Light control: red = %d, green = %d, blue = %d", red, green, blue);
     // cJSON_Delete(root);
-    return ESP_OK;
+    return error;
 }
 
 /* An HTTP GET handler */
@@ -218,6 +225,13 @@ static const httpd_uri_t test_post_uri = {
 
 static esp_err_t ajax_request_handler(httpd_req_t *req)
 {
+
+    // ------------------------test code start-----------------------
+    ESP_LOGI(TAG, "LED Blinking");
+    gpio_set_level(Led, 1);
+    vTaskDelay(50 / portTICK_PERIOD_MS);
+    gpio_set_level(Led, 0);
+
     const char *response = (const char *)req->user_ctx;
     esp_err_t error = httpd_resp_send(req, response, strlen(response));
     return error;
@@ -252,6 +266,7 @@ static const httpd_uri_t ajax_request_uri = {
                                               console.error('There has been a problem with your fetch operation:', error);\
                                         });\
                                     }\
+                     setInterval(makeRequestWithFetch, 3000);\
                 </script >\
                 <body>\
                 <h1>\
